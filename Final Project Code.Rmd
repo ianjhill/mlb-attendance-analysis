@@ -1,0 +1,396 @@
+---
+title: "Final Project"
+author: "Ian Hill, Luis Amadis Madrigal, Sebastian Pross, Paul Galli"
+date: "2024-12-10"
+output: pdf_document
+---
+
+``` {r}
+# Some comments here on how to run this:
+
+# [1] Make sure that the attendance-2016.txt file is in the directory you want to work through.
+# [2] In Rstuio there is a 'Session' tab at the top. Click on that tab and choose 'Set working directory', and then navigate through your files to choose the directory that the text file is in. In the console it will paste the 'setwd()' function with the directory in it, just copy that and paste it here
+
+setwd('/Users/name/Desktop/') # <--- Like this 
+# Read the data
+attendance_Dat <- read.delim("attendance-2016.txt", sep = ",", header = T)
+# Load necessary libraries
+library(dplyr)
+library(readxl)
+library(janitor)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(caret)
+library(car)
+library(corrplot)
+library(boot)
+library(reshape2)
+library(lmtest)
+library(glmnet)
+```
+
+``` {r}
+# Clean column names
+attendance_Dat <- attendance_Dat %>% clean_names()
+
+# Remove unnecessary columns
+attendance_Dat$team <- NULL
+attendance_Dat$home_attendance <- NULL
+attendance_Dat$road_attendance <- NULL
+attendance_Dat$road_games <- NULL
+attendance_Dat$home_games <- NULL
+```
+
+
+
+CODE FOR LEAGUE RUNS SCORED T-test
+```{r}
+# Load the necessary libraries
+library(readr)
+library(car) # for Levene's Test
+
+# Step 1: Load the dataset
+data <- select(attendance_Dat, runs_per_game, league)
+head(data)
+```
+```{r}
+# Step 2: Check assumptions
+# Subset data by league
+runs_AL <- data$runs[data$league == "AL"]
+runs_NL <- data$runs[data$league == "NL"]
+```
+```{r}
+# Check normality with Shapiro-Wilk test
+shapiro_AL <- shapiro.test(runs_AL)
+shapiro_NL <- shapiro.test(runs_NL)
+
+# Print results
+print(shapiro_AL)
+print(shapiro_NL)
+```
+Both data are approximately normal
+```{r}
+# Check homogeneity of variances
+levene_test <- leveneTest(data$runs ~ data$league)
+print(levene_test)
+```
+p-value > 0.05 equal variances use a standard t-test.
+```{r}
+# Step 3: Perform t-test
+t_test <- t.test(runs_AL, runs_NL, var.equal = TRUE)
+print(t_test)
+```
+p-value > 0.05, therefore we can determine that league does not affect the number of runs scored.
+
+CODE FOR ATTENDANCE BASED ON LEAGUE
+```{r}
+data <- select(attendance_Dat, home_avg_att, league)
+head(data)
+# Step 2: Check assumptions
+# Subset data by league
+att_AL <- data$home_avg_att[data$league == "AL"]
+att_NL <- data$home_avg_att[data$league == "NL"]
+```
+```{r}
+# Check normality with Shapiro-Wilk test
+shapiro_AL <- shapiro.test(att_AL)
+shapiro_NL <- shapiro.test(att_NL)
+
+# Print results
+print("Shapiro-Wilk Test Results for AL:")
+print(shapiro_AL)
+
+print("Shapiro-Wilk Test Results for NL:")
+print(shapiro_NL)
+```
+Data are both approximately normal p-value > 0.05.
+
+```{r}
+# Check homogeneity of variances
+levene_test <- leveneTest(data$home_avg_att ~ data$league)
+print("Levene's Test for Homogeneity of Variance:")
+print(levene_test)
+```
+Assume equal variances p-value > 0.05, use standard t-test
+```{r}
+# Step 3: Perform t-test
+t_test <- t.test(att_AL, att_NL, var.equal = TRUE)
+print("Two-Sample T-Test Results:")
+print(t_test)
+```
+There is no difference in attendance based on league.
+
+
+
+``` {r}
+attendance_Dat$league <- NULL
+attendance_Dat$road_avg_att <- NULL
+attendance_Dat$overall_avg_att <- NULL
+attendance_Dat$gp <- NULL
+attendance_Dat$runs <- NULL
+```
+
+```{r}
+# Establish road, home, and overall attendance dataframes
+head(attendance_Dat)
+
+home_attendance_dat <- select(attendance_Dat, home_avg_att, ab, won, lost, runs_per_game,
+         h, x2b, x3b, hr, tb, rbi, avg, obp, slg, ops)
+head(home_attendance_dat)
+
+scale_predictors <- function(df) {
+  response <- df$y
+  predictors <- df[,-1]
+  scaled_predictors <- scale(predictors)
+  return(data.frame(y = response, scaled_predictors))
+}
+#home_attendance_dat <- scale_predictors(home_attendance_dat)
+# Display the first rows of each dataframe
+head(home_attendance_dat)
+```
+
+# EDA
+``` {r}
+# Home Attendance
+par(mfrow=c(2,2),mar=c(4, 4, 4, 4))
+hist(home_attendance_dat[,1], xlab="Attendance", main="Histogram of Average Home Attendance")
+qqnorm(home_attendance_dat[,1], main="Q-Q Plot of Average Home Attendance")
+qqline(home_attendance_dat[,1])
+
+# Shapiro-Wilk test to confirm normality
+shapiro.test(home_attendance_dat$home_avg_att)
+```
+
+# Paired Scatterplots
+```  {r}
+pairs(home_attendance_dat)
+```
+
+
+# Correlation Matrix
+``` {r}
+cor(home_attendance_dat)
+```
+** Comments**: It appears as for Home Average Attendance, the variables with strong positive correlations are the wins, runs per game, home runs and on base plus slugging. The variable with the strongest negative correlation is losses.
+
+For Road Average Attendance, it seems as if the variables with strong positive correlations are wins and home rums. Lost(losses) is the variable that has the strongest negative correlation.
+
+For Overall Average Attendance, it seems as if the variables with strong positive correlations are wins, runs pergame, home runs and on base plus slugging. The variable with the strongest negative correlation is losses. 
+
+For Wins, it seems as if the variable with strong positive correlations are 
+
+
+# Build models
+
+```{r}
+# Model for Home Attendance
+model_home <- lm(home_avg_att ~ ., data = home_attendance_dat)
+hist(model_home$residuals)
+qqnorm(model_home$residuals)
+qqline(model_home$residuals)
+summary(model_home)
+
+```
+
+# k-stepwise Regression
+``` {r}
+library(olsrr)
+intercept_model <- lm(home_avg_att ~ 1, data = home_attendance_dat)
+# step(intercept_model)
+
+k_stepwise_home_for <- step(model_home, direction = "forward", trace = 0)
+# summary(k_stepwise_home_for)
+
+
+k_stepwise_home_back <- step(model_home, direction = "backward", trace = 0)
+summary(k_stepwise_home_back)
+
+
+k_stepwise_home_both <- step(model_home, direction = "both", trace = 0)
+# summary(k_stepwise_home_both)
+
+par(mfrow = c(2, 2))
+plot(intercept_model$residuals, main = "Intercept Residuals", ylab = "Residuals")
+plot(k_stepwise_home_for$residuals, main = "Forward Direction Stepwise Residuals", ylab = "Residuals")
+plot(k_stepwise_home_back$residuals, main = "Backward Direction Stepwise Residuals", ylab = "Residuals")
+plot(k_stepwise_home_both$residuals, main = "Both-Direction Stepwise Residuals", ylab = "Residuals")
+```
+
+# Best Subsets regression
+```{r}
+library(leaps)
+best_sub_home <- regsubsets(home_avg_att~., data = home_attendance_dat, nvmax = 5)
+summary(best_sub_home)
+plot(best_sub_home)
+res.sum <- summary(best_sub_home)
+data.frame(
+  Adj.R2 = which.max(res.sum$adjr2),
+  CP = which.min(res.sum$cp),
+  BIC = which.min(res.sum$bic)
+)
+best_sub_home
+```
+# Assess k-stepwise Regression
+```{r}
+AIC(k_stepwise_home_for)
+AIC(k_stepwise_home_back)
+AIC(k_stepwise_home_both)
+```
+# Get BEST Model
+``` {r}
+model1_home <- lm(home_avg_att ~ won + lost + x2b + x3b + hr + avg + ops, data = home_attendance_dat)
+summary(model1_home)
+anova(model1_home)
+plot(model1_home)
+
+library("car")
+vif(model1_home)
+
+```
+
+```{r}
+plot(model1_home)
+shapiro.test(residuals(model1_home))
+# Homoscedasticity Test (Breusch-Pagan Test)
+bptest(model1_home)
+
+# Independence of Observations (Durbin-Watson Test)
+dwtest(model1_home)
+```
+
+```{r}
+
+## Define a function for bootstrapping
+boot_fn <- function(data, indices) {
+  model <- lm(home_avg_att ~ won + lost + x2b + x3b + hr + avg + ops, data = data[indices, ])
+  return(coef(model))
+}
+
+## Perform bootstrapping
+set.seed(123)
+boot_results <- boot(home_attendance_dat, boot_fn, R = 1000)
+
+## Display the bootstrapping results
+boot_results
+plot(boot_results)
+```
+
+```{r}
+# Cross-validation for the best home attendance model
+library(caret)
+set.seed(123)
+train_control <- trainControl(method = "cv", number = 10)
+cv_model_home <- train(home_avg_att ~ won + lost + x2b + x3b + hr + avg + ops, data = home_attendance_dat, method = "lm", trControl = train_control)
+print(cv_model_home)
+
+# Evaluate prediction accuracy
+predictions_home <- predict(cv_model_home, home_attendance_dat)
+RMSE_home <- sqrt(mean((home_attendance_dat$home_avg_att - predictions_home)^2))
+cat("RMSE for Home Attendance Model:", RMSE_home, "\n")
+```
+
+# WON MODEL MLR
+```{r}
+won_dat <- select(home_attendance_dat, won, ab, runs_per_game, h, x2b, x3b, hr, tb, rbi, avg, obp, slg, ops)
+```
+
+```{r}
+model_won <- lm(won ~ ., data = won_dat)
+hist(model_won$residuals)
+qqnorm(model_won$residuals)
+qqline(model_won$residuals)
+summary(model_won)
+```
+# K-Step-wise Regression for WON MODEL
+```{r}
+intercept_model_won <- lm(won ~ 1, data = won_dat)
+#step(intercept_model_won)
+
+k_stepwise_won_for <- step(model_won, direction = "forward", trace = 0)
+summary(k_stepwise_won_for)
+
+
+k_stepwise_won_back <- step(model_won, direction = "backward", trace = 0)
+summary(k_stepwise_won_back)
+
+
+k_stepwise_won_both <- step(model_won, direction = "both", trace = 0)
+summary(k_stepwise_won_both)
+
+par(mfrow = c(2, 2))
+plot(intercept_model_won$residuals, main = "Intercept Residuals", ylab = "Residuals")
+plot(k_stepwise_won_for$residuals, main = "Forward Direction Stepwise Residuals", ylab = "Residuals")
+plot(k_stepwise_won_back$residuals, main = "Backward Direction Stepwise Residuals", ylab = "Residuals")
+plot(k_stepwise_won_both$residuals, main = "Both-Direction Stepwise Residuals", ylab = "Residuals")
+```
+# BEST SUBSETS REGRESSION
+```{r}
+#best_sub_won <- regsubsets(won~., data = won_dat, nvmax = 5)
+#summary(best_sub_won)
+#plot(best_sub_won)
+
+k_subset_won<- ols_step_best_subset(model_won, details= TRUE)
+print(k_subset_won)
+plot(k_subset_won)
+```
+
+```{r}
+#anova(k_stepwise_won_for, k_stepwise_won_back, k_stepwise_won_both, best_sub_won)
+AIC(k_stepwise_won_for)
+AIC(k_stepwise_won_back)
+AIC(k_stepwise_won_both)
+
+```
+# GET BEST WON MODEL
+```{r}
+model1_won <- lm(won ~ ab + runs_per_game + h + x2b + x3b + hr + slg, data = won_dat)
+summary(model1_won)
+anova(model1_won)
+plot(model1_won)
+
+vif(model1_won)
+```
+
+```{r}
+plot(model1_won)
+shapiro.test(residuals(model1_won))
+# Homoscedasticity Test (Breusch-Pagan Test)
+bptest(model1_won)
+
+# Independence of Observations (Durbin-Watson Test)
+dwtest(model1_won)
+```
+
+```{r}
+## Define a function for bootstrapping
+boot_fn1 <- function(data, indices) {
+  model <- lm(won ~ ab + runs_per_game + h + x2b + x3b + hr + slg, data = data[indices, ])
+  return(coef(model))
+}
+
+## Perform bootstrapping
+set.seed(123)
+boot_results1 <- boot(won_dat, boot_fn1, R = 1000)
+
+## Display the bootstrapping results
+boot_results1
+plot(boot_results1)
+```
+
+```{r}
+# Cross-validation for the best home attendance model
+library(caret)
+set.seed(123)
+train_control <- trainControl(method = "cv", number = 10)
+cv_model_won <- train(won ~ ab + runs_per_game + h + x2b + x3b + hr + slg, data = won_dat, method = "lm", trControl = train_control)
+print(cv_model_won)
+
+# Evaluate prediction accuracy
+predictions_won <- predict(cv_model_won, won_dat)
+RMSE_won <- sqrt(mean((won_dat$won - predictions_won)^2))
+cat("RMSE for Home Attendance Model:", RMSE_won, "\n")
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
